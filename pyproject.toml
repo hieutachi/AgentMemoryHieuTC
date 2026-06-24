@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "agent-memory-hieutc"
+version = "1.0.0"
+description = "Local research memory agent for AI/ML/RL/MARL codebases"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "HieuTC"}
+]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "networkx>=3.0",
+    "pyyaml>=6.0",
+    "gitpython>=3.1.0",
+]
+
+[project.optional-dependencies]
+embeddings = [
+    "sentence-transformers",
+    "chromadb",
+]
+all = [
+    "sentence-transformers",
+    "chromadb",
+    "pyvis",
+]
+
+[project.scripts]
+agentmemory = "agent_memory_hieutc.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_memory_hieutc*"]
