@@ -1,6 +1,9 @@
 # AgentMemory runtime (per-repo index — do not commit)
 .agent_memory_hieutc/
 
+# Embeddings cache
+**/embeddings/
+
 # Python
 __pycache__/
 *.py[cod]

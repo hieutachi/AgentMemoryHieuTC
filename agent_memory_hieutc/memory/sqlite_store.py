@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .schema import SCHEMA_SQL
+from .schema import SCHEMA_SQL, SCHEMA_V2_SQL
 
 
 class SQLiteStore:
@@ -40,6 +40,7 @@ class SQLiteStore:
     def initialize_schema(self) -> None:
         assert self.conn
         self.conn.executescript(SCHEMA_SQL)
+        self.conn.executescript(SCHEMA_V2_SQL)
         self.conn.commit()
 
     # ---- Repository ----
@@ -352,12 +353,179 @@ class SQLiteStore:
         )
         return [dict(r) for r in cur.fetchall()]
 
+    # ---- Locks ----
+
+    def upsert_lock(
+        self, repo_id: int, lock_type: str, target_path: str, label: str,
+        file_hash: str = "", metrics_json: dict | None = None,
+        git_commit: str = "", metadata: dict | None = None,
+    ) -> int:
+        assert self.conn
+        import json as _json
+        now = datetime.utcnow().isoformat()
+        cur = self.conn.execute(
+            "SELECT lock_id FROM locks WHERE repo_id=? AND label=?",
+            (repo_id, label),
+        )
+        row = cur.fetchone()
+        mjson = _json.dumps(metrics_json or {})
+        meta = _json.dumps(metadata or {})
+        if row:
+            self.conn.execute(
+                """UPDATE locks SET lock_type=?, target_path=?, file_hash=?,
+                   metrics_json=?, git_commit=?, locked_at=?, metadata=?
+                   WHERE lock_id=?""",
+                (lock_type, target_path, file_hash, mjson, git_commit, now, meta, row["lock_id"]),
+            )
+            self.conn.commit()
+            return row["lock_id"]
+        cur = self.conn.execute(
+            """INSERT INTO locks (repo_id, lock_type, target_path, label,
+               file_hash, metrics_json, git_commit, locked_at, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (repo_id, lock_type, target_path, label, file_hash, mjson, git_commit, now, meta),
+        )
+        self.conn.commit()
+        return cur.lastrowid  # type: ignore
+
+    def get_locks(self, repo_id: int) -> list[dict]:
+        assert self.conn
+        cur = self.conn.execute(
+            "SELECT * FROM locks WHERE repo_id=? ORDER BY locked_at DESC",
+            (repo_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def delete_lock(self, repo_id: int, label: str) -> bool:
+        assert self.conn
+        cur = self.conn.execute(
+            "DELETE FROM locks WHERE repo_id=? AND label=?", (repo_id, label),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    # ---- Phases ----
+
+    def upsert_phase(
+        self, repo_id: int, phase_name: str, status: str = "pending",
+        tasks_json: list | None = None, notes: str = "",
+        started_at: str = "", completed_at: str = "",
+    ) -> int:
+        assert self.conn
+        import json as _json
+        tasks = _json.dumps(tasks_json if tasks_json is not None else [])
+        cur = self.conn.execute(
+            "SELECT phase_id, tasks_json FROM phases WHERE repo_id=? AND phase_name=?",
+            (repo_id, phase_name),
+        )
+        row = cur.fetchone()
+        if row and tasks_json is None:
+            tasks = row["tasks_json"]
+        if row:
+            self.conn.execute(
+                """UPDATE phases SET status=?, tasks_json=?, notes=?,
+                   started_at=COALESCE(NULLIF(?, ''), started_at),
+                   completed_at=COALESCE(NULLIF(?, ''), completed_at)
+                   WHERE phase_id=?""",
+                (status, tasks, notes, started_at, completed_at, row["phase_id"]),
+            )
+            self.conn.commit()
+            return row["phase_id"]
+        cur = self.conn.execute(
+            """INSERT INTO phases (repo_id, phase_name, status, tasks_json, notes,
+               started_at, completed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (repo_id, phase_name, status, tasks, notes, started_at, completed_at),
+        )
+        self.conn.commit()
+        return cur.lastrowid  # type: ignore
+
+    def get_phase(self, repo_id: int, phase_name: str) -> dict | None:
+        assert self.conn
+        cur = self.conn.execute(
+            "SELECT * FROM phases WHERE repo_id=? AND phase_name=?",
+            (repo_id, phase_name),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def get_phases(self, repo_id: int) -> list[dict]:
+        assert self.conn
+        cur = self.conn.execute(
+            "SELECT * FROM phases WHERE repo_id=? ORDER BY phase_id",
+            (repo_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    # ---- Decisions ----
+
+    def insert_decision(
+        self, repo_id: int, content: str, phase: str = "", outcome: str = "",
+    ) -> int:
+        assert self.conn
+        cur = self.conn.execute(
+            """INSERT INTO decisions (repo_id, phase, content, outcome)
+               VALUES (?, ?, ?, ?)""",
+            (repo_id, phase, content, outcome),
+        )
+        self.conn.commit()
+        return cur.lastrowid  # type: ignore
+
+    def get_decisions(self, repo_id: int, limit: int = 20) -> list[dict]:
+        assert self.conn
+        cur = self.conn.execute(
+            "SELECT * FROM decisions WHERE repo_id=? ORDER BY decision_id DESC LIMIT ?",
+            (repo_id, limit),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    # ---- Run artifacts (WandB / MLflow) ----
+
+    def insert_run_artifact(
+        self, repo_id: int, source: str, run_id: str = "",
+        run_name: str = "", metrics_json: dict | None = None,
+        config_json: dict | None = None, artifact_path: str = "",
+    ) -> int:
+        assert self.conn
+        import json as _json
+        now = datetime.utcnow().isoformat()
+        cur = self.conn.execute(
+            """INSERT INTO run_artifacts (repo_id, source, run_id, run_name,
+               metrics_json, config_json, artifact_path, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (repo_id, source, run_id, run_name,
+             _json.dumps(metrics_json or {}), _json.dumps(config_json or {}),
+             artifact_path, now),
+        )
+        self.conn.commit()
+        return cur.lastrowid  # type: ignore
+
+    def get_run_artifacts(self, repo_id: int, source: str | None = None) -> list[dict]:
+        assert self.conn
+        if source:
+            cur = self.conn.execute(
+                "SELECT * FROM run_artifacts WHERE repo_id=? AND source=? ORDER BY synced_at DESC",
+                (repo_id, source),
+            )
+        else:
+            cur = self.conn.execute(
+                "SELECT * FROM run_artifacts WHERE repo_id=? ORDER BY synced_at DESC",
+                (repo_id,),
+            )
+        return [dict(r) for r in cur.fetchall()]
+
+    def clear_run_artifacts(self, repo_id: int) -> None:
+        assert self.conn
+        self.conn.execute("DELETE FROM run_artifacts WHERE repo_id=?", (repo_id,))
+        self.conn.commit()
+
     # ---- Stats ----
 
     def get_stats(self, repo_id: int) -> dict[str, int]:
         assert self.conn
         stats: dict[str, int] = {}
-        for table in ["files", "experiments", "paper_sections", "figures", "memory_items"]:
+        for table in ["files", "experiments", "paper_sections", "figures", "memory_items",
+                       "locks", "phases", "decisions", "run_artifacts"]:
             cur = self.conn.execute(
                 f"SELECT COUNT(*) as cnt FROM {table} WHERE repo_id=?",
                 (repo_id,),
@@ -398,7 +566,7 @@ class SQLiteStore:
                    SELECT file_id FROM files WHERE repo_id=?))""",
             (repo_id, repo_id),
         )
-        for table in ["memory_items", "figures", "paper_sections",
+        for table in ["run_artifacts", "memory_items", "figures", "paper_sections",
                        "experiments", "files"]:
             self.conn.execute(
                 f"DELETE FROM {table} WHERE repo_id=?", (repo_id,)

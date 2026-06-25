@@ -113,4 +113,60 @@ CREATE INDEX IF NOT EXISTS idx_paper_sections_repo ON paper_sections(repo_id);
 CREATE INDEX IF NOT EXISTS idx_figures_repo ON figures(repo_id);
 CREATE INDEX IF NOT EXISTS idx_memory_items_repo ON memory_items(repo_id);
 CREATE INDEX IF NOT EXISTS idx_memory_items_key ON memory_items(key);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_items_repo_key ON memory_items(repo_id, key);
+"""
+
+SCHEMA_V2_SQL = """
+CREATE TABLE IF NOT EXISTS locks (
+    lock_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id       INTEGER NOT NULL REFERENCES repositories(repo_id),
+    lock_type     TEXT NOT NULL,
+    target_path   TEXT DEFAULT '',
+    label         TEXT NOT NULL,
+    file_hash     TEXT DEFAULT '',
+    metrics_json  TEXT DEFAULT '{}',
+    git_commit    TEXT DEFAULT '',
+    locked_at     TEXT DEFAULT (datetime('now')),
+    metadata      TEXT DEFAULT '{}',
+    UNIQUE(repo_id, label)
+);
+
+CREATE TABLE IF NOT EXISTS phases (
+    phase_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id       INTEGER NOT NULL REFERENCES repositories(repo_id),
+    phase_name    TEXT NOT NULL,
+    status        TEXT DEFAULT 'pending',
+    tasks_json    TEXT DEFAULT '[]',
+    notes         TEXT DEFAULT '',
+    started_at    TEXT DEFAULT '',
+    completed_at  TEXT DEFAULT '',
+    UNIQUE(repo_id, phase_name)
+);
+
+CREATE TABLE IF NOT EXISTS decisions (
+    decision_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id       INTEGER NOT NULL REFERENCES repositories(repo_id),
+    phase         TEXT DEFAULT '',
+    content       TEXT NOT NULL,
+    outcome       TEXT DEFAULT '',
+    created_at    TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS run_artifacts (
+    artifact_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id       INTEGER NOT NULL REFERENCES repositories(repo_id),
+    source        TEXT NOT NULL,
+    run_id        TEXT DEFAULT '',
+    run_name      TEXT DEFAULT '',
+    metrics_json  TEXT DEFAULT '{}',
+    config_json   TEXT DEFAULT '{}',
+    artifact_path TEXT DEFAULT '',
+    synced_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_locks_repo ON locks(repo_id);
+CREATE INDEX IF NOT EXISTS idx_phases_repo ON phases(repo_id);
+CREATE INDEX IF NOT EXISTS idx_decisions_repo ON decisions(repo_id);
+CREATE INDEX IF NOT EXISTS idx_run_artifacts_repo ON run_artifacts(repo_id);
 """

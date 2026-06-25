@@ -33,6 +33,8 @@ from .reports.health_report import generate_health_report
 from .reports.project_report import generate_scan_report
 from .scanner import scan_repository
 from .utils.text import extract_keywords, estimate_tokens
+from .cli_v2 import register_v2_commands, sync_external_runs
+from .research.phase_tracker import ensure_default_phases
 
 app = typer.Typer(
     name="agentmemory",
@@ -40,6 +42,9 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+# v2 subcommands must register at import time (entry point uses `app`, not `main()`)
+register_v2_commands(app)
 
 
 @app.command()
@@ -122,6 +127,12 @@ def scan(
         console.print("[bold]Discovering figures...[/bold]")
         figures = discover_figures(store, repo_id, cfg.repo_root)
         console.print(f"  Found {len(figures)} figures.")
+
+        console.print("[bold]Syncing external runs...[/bold]")
+        run_counts = sync_external_runs(cfg, store, repo_id)
+        console.print(f"  WandB: {run_counts['wandb']}, MLflow: {run_counts['mlflow']}.")
+
+        ensure_default_phases(store, repo_id)
 
         # Generate graphs
         console.print("[bold]Building graphs...[/bold]")
@@ -508,3 +519,7 @@ def _answer_question(question: str, store: SQLiteStore,
 
 def main():
     app()
+
+
+if __name__ == "__main__":
+    main()

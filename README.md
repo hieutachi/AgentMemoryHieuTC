@@ -1,117 +1,128 @@
-# AgentMemoryHieuTC
+# AgentMemoryHieuTC v2.0
 
-A local research memory agent for AI/ML/RL/MARL codebases.
-
-Prevents every new AI agent session from rediscovering your project from zero.
-Scans your Git repository once, builds durable context, and exports a compact
-memory pack that any AI agent can read to resume work immediately.
+Local research memory agent for AI/ML/RL/MARL codebases — **compact context**, **phase tracking**, **metric LOCK**, and **decision log** for long research projects.
 
 ## Installation
 
 ```bash
 pip install -e .
+# Optional semantic search:
+pip install -e ".[embeddings]"
 ```
 
 ## Quick Start
 
 ```bash
 cd /path/to/your/research_repo
-
-# 1. Initialize
-agentmemory init
-
-# 2. Full scan
+agentmemory init --name "My MARL Project"
 agentmemory scan -v
-
-# 3. Generate context for next AI agent
+agentmemory phase set baseline
 agentmemory context
-
-# 4. The key output file:
-#    .agent_memory_hieutc/context/CONTEXT_COMPACT.md  (~500 tokens)
-#    .agent_memory_hieutc/context/NEXT_AGENT_PROMPT.md
+# Hand off: .agent_memory_hieutc/context/NEXT_AGENT_PROMPT.md
 ```
 
-## Commands
+## Core Commands
 
 | Command | Description |
 |---|---|
-| `agentmemory init` | Initialize `.agent_memory_hieutc/` in the repo |
-| `agentmemory scan` | Full static scan of all files |
-| `agentmemory update` | Incremental update from Git diff |
-| `agentmemory graph` | Generate codebase and research workflow graphs |
-| `agentmemory context` | Export compact context pack (~500 tokens) |
-| `agentmemory ask "question"` | Ask a question using indexed metadata |
-| `agentmemory paper-map` | Generate paper-to-code mapping |
-| `agentmemory health` | Check repository quality |
-| `agentmemory diff` | Show changes since last scan |
+| `agentmemory init` | Initialize memory in repo |
+| `agentmemory scan` | Full scan + graph + context |
+| `agentmemory update` | Incremental git diff update |
+| `agentmemory context` | Export compact context (~500 tokens) |
+| `agentmemory ask "..."` | Keyword search (no LLM) |
+| `agentmemory diff` | Changes since last scan |
+| `agentmemory health` | Repository health report |
+| `agentmemory verify` | Verify LOCKs + paper claims |
+| `agentmemory matrix` | Experiment matrix export |
 
-## Key Output
+## v2.0: LOCK (freeze numbers & files)
 
-After scanning, find these files in `.agent_memory_hieutc/context/`:
+```bash
+agentmemory lock result results/table2.json --label table2
+agentmemory lock config configs/mappo_train.yaml --label main_config
+agentmemory lock metric table2_reward "reward=0.847,seed=3"
+agentmemory lock list
+agentmemory lock verify    # fails if locked file changed
+agentmemory lock unlock table2
+```
 
-- **`CONTEXT_COMPACT.md`** — Primary handoff file (~500 tokens, compact mode)
-- **`NEXT_AGENT_PROMPT.md`** — Ready-to-copy prompt for new sessions
-- **`AGENT_BRIEF.md`** — Minimal index pointing to compact context
+## v2.0: Phase tracking
 
-Set `context_mode: full` in config for detailed `PROJECT_CONTEXT.md`, `EXPERIMENT_MAPPING.md`, etc.
+```bash
+agentmemory phase set baseline
+agentmemory phase task "MAPPO 5 seeds on map A done"
+agentmemory phase done baseline
+agentmemory phase set ablation
+agentmemory phase status
+```
 
-## How It Works
+Phases: `baseline`, `ablation`, `unseen_map`, `sensitivity`, `camera_ready`, `revision`
 
-1. Walks your repository and classifies every file
-2. Parses Python files with AST to extract symbols, imports, and RL/MARL patterns
-3. Discovers experiments, paper files, and figure generators
-4. Builds a codebase dependency graph and research workflow graph
-5. Stores everything in a local SQLite database
-6. Exports compact Markdown context files for AI agent handoff
-7. Updates incrementally using Git diffs
+## v2.0: Decision log
+
+```bash
+agentmemory note "Tried entropy coef 0.01 — coverage dropped" --outcome fail
+agentmemory note "Best config: lr=3e-4, clip=0.2" --outcome success
+```
+
+## v2.0: Integrations
+
+```bash
+# Auto-sync wandb/ and mlruns/ on scan (configurable)
+agentmemory scan -v
+
+# Git hooks (auto update + lock verify on commit)
+agentmemory hooks install
+
+# Semantic search (optional)
+agentmemory embed index
+agentmemory embed search "reward shaping function"
+```
+
+## Key Output Files
+
+| File | Purpose |
+|---|---|
+| `CONTEXT_COMPACT.md` | Primary agent handoff (~500 tokens) |
+| `NEXT_AGENT_PROMPT.md` | Copy-paste prompt for new session |
+| `PHASE_STATUS.md` | Current phase + rules |
+| `EXPERIMENT_MATRIX.md` | Algo × env × seeds table |
+| `DECISION_LOG.md` | What was tried (via `note`) |
+
+## Config (`.agent_memory_hieutc/config.yaml`)
+
+```yaml
+version: "2.0.0"
+context_mode: compact
+context_max_files: 12
+context_importance_min: 5.0
+wandb_sync_enabled: true
+mlflow_sync_enabled: true
+embeddings_enabled: false
+```
+
+## Research Workflow Example
+
+```bash
+agentmemory init --name "VD-MAPPO Coverage"
+agentmemory phase set baseline
+agentmemory scan -v
+
+# After training
+agentmemory lock result outputs/baseline_mappo.json --label table1
+agentmemory lock config configs/mappo.yaml --label baseline_cfg
+agentmemory note "Baseline MAPPO 5 seeds — coverage 0.82±0.03" -o success
+agentmemory phase done baseline
+
+agentmemory context          # ~500 tokens for next agent
+agentmemory hooks install    # auto-update on commit
+```
 
 ## Requirements
 
 - Python 3.10+
-- No GPU required
-- No cloud API required
-- Works fully offline
-
-## Example Workflow
-
-```bash
-# Day 1: Set up
-cd my_mappo_project
-agentmemory init --name "VD-MAPPO Coverage"
-agentmemory scan -v
-
-# Day 2: After editing code
-agentmemory update -v
-agentmemory health
-
-# Before handing off to a new AI agent
-agentmemory context
-# Then paste contents of .agent_memory_hieutc/context/NEXT_AGENT_PROMPT.md
-
-# Quick question
-agentmemory ask "Where is the reward function?"
-agentmemory ask "Which scripts generate figures?"
-agentmemory ask "What should the next AI agent read first?"
-```
-
-## Context / Token Budget
-
-Default mode is **compact** (~500 tokens total). Tune in `.agent_memory_hieutc/config.yaml`:
-
-```yaml
-context_mode: compact          # or "full" for detailed markdown set
-context_max_files: 12          # files in "read first" list
-context_importance_min: 5.0    # skip low-importance files
-context_summary_max_chars: 48  # truncate summaries
-context_max_experiments: 8
-```
-
-## Limitations
-
-- Static analysis only (does not execute code)
-- No vector embeddings in baseline mode
-- Mermaid graph complexity limited for very large repos
-- Python-only deep parsing (other languages get basic classification)
+- Works offline (embeddings/wandb/mlflow optional)
+- No cloud LLM required
 
 ## License
 

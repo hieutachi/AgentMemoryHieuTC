@@ -66,6 +66,10 @@ def _parse_json_field(val: Any, default: list | None = None) -> list:
 
 def _generate_compact_pack(cfg: MemoryConfig, store: SQLiteStore,
                            repo_id: int) -> list[str]:
+    from ..research.phase_tracker import ensure_default_phases, generate_phase_status
+    from ..research.experiment_matrix import export_matrix_markdown
+
+    ensure_default_phases(store, repo_id)
     generated: list[str] = []
     compact = _build_compact_context(cfg, store, repo_id)
     generated.append(_write_file(cfg.context_dir / "CONTEXT_COMPACT.md", compact))
@@ -73,11 +77,14 @@ def _generate_compact_pack(cfg: MemoryConfig, store: SQLiteStore,
         cfg.context_dir / "NEXT_AGENT_PROMPT.md",
         _compact_next_prompt(cfg, estimate_tokens(compact)),
     ))
-    # Tiny index for humans
     generated.append(_write_file(
         cfg.context_dir / "AGENT_BRIEF.md",
         _minimal_brief(cfg, store, repo_id, estimate_tokens(compact)),
     ))
+    generated.append(generate_phase_status(cfg.context_dir, store, repo_id, cfg.repo_name))
+    matrix = export_matrix_markdown(cfg.context_dir, store, repo_id, cfg.repo_name)
+    if matrix:
+        generated.append(matrix)
     return generated
 
 
@@ -128,13 +135,32 @@ def _build_compact_context(cfg: MemoryConfig, store: SQLiteStore,
             gen = fig.get("generator_script") or "-"
             lines.append(f"- {fig['figure_name']}: `{gen}`")
 
+    active_phase = store.get_memory(repo_id, "active_phase") or "none"
+    lines.extend(["", f"## Phase: `{active_phase}`"])
+
+    locks = store.get_locks(repo_id)
+    if locks:
+        lines.extend(["", "## LOCKED (do not change without unlock)"])
+        for lk in locks[:8]:
+            lines.append(f"- [{lk['lock_type']}] {lk['label']}: `{lk.get('target_path') or '-'}`")
+
+    decisions = store.get_decisions(repo_id, limit=5)
+    if decisions:
+        lines.extend(["", "## Recent decisions"])
+        for d in decisions:
+            lines.append(f"- {d['content'][:80]}")
+
+    runs = store.get_run_artifacts(repo_id)
+    if runs:
+        lines.append(f"\n## Runs synced: {len(runs)} (wandb/mlflow)")
+
     lines.extend([
         "",
         "## Skip",
         ".agent_memory_hieutc/, checkpoints, logs, tests/ (unless task needs them)",
         "",
         "## On demand",
-        "`agentmemory ask \"...\"` | `agentmemory diff`",
+        "`agentmemory ask` | `agentmemory diff` | `agentmemory lock verify`",
     ])
     return "\n".join(lines)
 
@@ -143,9 +169,10 @@ def _compact_next_prompt(cfg: MemoryConfig, token_est: int) -> str:
     return f"""Continue **{cfg.repo_name}**. Do NOT reread the whole repo.
 
 Read ONLY: `.agent_memory_hieutc/context/CONTEXT_COMPACT.md` (~{token_est} tokens).
+Check active phase + LOCKED items in that file. Obey PHASE_STATUS.md rules.
 
 Then open source files relevant to the current task only.
-Use `agentmemory ask` / `agentmemory diff` if you need more context.
+Use `agentmemory note` to log decisions. Use `agentmemory lock verify` before citing numbers.
 """
 
 

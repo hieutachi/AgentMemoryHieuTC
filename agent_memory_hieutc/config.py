@@ -28,7 +28,7 @@ DEFAULT_IGNORE_PATTERNS: list[str] = [
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "version": "1.1.0",
+    "version": "2.0.0",
     "repo_name": "",
     "scan_paths": ["."],
     "ignore_patterns": DEFAULT_IGNORE_PATTERNS,
@@ -40,6 +40,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "last_scan_time": None,
     "embeddings_enabled": False,
     "embeddings_backend": "sentence-transformers",
+    "wandb_sync_enabled": True,
+    "mlflow_sync_enabled": True,
+    "git_hooks_enabled": False,
     # Context / token budget (compact = default)
     "context_mode": "compact",
     "context_max_files": 12,
@@ -47,6 +50,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "context_max_figures": 6,
     "context_summary_max_chars": 48,
     "context_importance_min": 5.0,
+    "context_max_decisions": 5,
 }
 
 
@@ -147,6 +151,18 @@ class MemoryConfig:
         if memory_glob not in patterns:
             patterns.append(memory_glob)
         return patterns
+
+    @property
+    def wandb_sync_enabled(self) -> bool:
+        return bool(self.data.get("wandb_sync_enabled", True))
+
+    @property
+    def mlflow_sync_enabled(self) -> bool:
+        return bool(self.data.get("mlflow_sync_enabled", True))
+
+    @property
+    def embeddings_enabled(self) -> bool:
+        return bool(self.data.get("embeddings_enabled", False))
 
 
 def ensure_memory_dirs(cfg: MemoryConfig) -> None:
