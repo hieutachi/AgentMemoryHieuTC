@@ -18,6 +18,8 @@ DEFAULT_IGNORE_PATTERNS: list[str] = [
     "node_modules/", "wandb/", "runs/", ".cache/", "dist/", "build/",
     ".eggs/", "*.egg-info/", ".mypy_cache/", ".pytest_cache/",
     ".ruff_cache/", ".tox/", ".nox/",
+    f"{MEMORY_DIR_NAME}/",
+    "*.sqlite-shm", "*.sqlite-wal",
     "*.pt", "*.pth", "*.ckpt", "*.onnx", "*.pkl", "*.pickle",
     "*.zip", "*.tar", "*.tar.gz", "*.rar", "*.7z",
     "*.mp4", "*.avi", "*.mov", "*.wav", "*.mp3",
@@ -26,18 +28,25 @@ DEFAULT_IGNORE_PATTERNS: list[str] = [
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "repo_name": "",
     "scan_paths": ["."],
     "ignore_patterns": DEFAULT_IGNORE_PATTERNS,
     "max_file_size_mb": 10,
     "importance_threshold": 3,
-    "graph_max_nodes": 80,
-    "graph_max_edges": 200,
+    "graph_max_nodes": 50,
+    "graph_max_edges": 120,
     "last_scan_commit": None,
     "last_scan_time": None,
     "embeddings_enabled": False,
     "embeddings_backend": "sentence-transformers",
+    # Context / token budget (compact = default)
+    "context_mode": "compact",
+    "context_max_files": 12,
+    "context_max_experiments": 8,
+    "context_max_figures": 6,
+    "context_summary_max_chars": 48,
+    "context_importance_min": 5.0,
 }
 
 
@@ -107,6 +116,37 @@ class MemoryConfig:
     @property
     def importance_threshold(self) -> int:
         return self.data.get("importance_threshold", 3)
+
+    @property
+    def context_mode(self) -> str:
+        return self.data.get("context_mode", "compact")
+
+    @property
+    def context_max_files(self) -> int:
+        return int(self.data.get("context_max_files", 12))
+
+    @property
+    def context_max_experiments(self) -> int:
+        return int(self.data.get("context_max_experiments", 8))
+
+    @property
+    def context_max_figures(self) -> int:
+        return int(self.data.get("context_max_figures", 6))
+
+    @property
+    def context_summary_max_chars(self) -> int:
+        return int(self.data.get("context_summary_max_chars", 48))
+
+    @property
+    def context_importance_min(self) -> float:
+        return float(self.data.get("context_importance_min", 5.0))
+
+    def effective_ignore_patterns(self) -> list[str]:
+        patterns = list(self.ignore_patterns)
+        memory_glob = f"{MEMORY_DIR_NAME}/"
+        if memory_glob not in patterns:
+            patterns.append(memory_glob)
+        return patterns
 
 
 def ensure_memory_dirs(cfg: MemoryConfig) -> None:

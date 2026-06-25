@@ -357,20 +357,49 @@ class SQLiteStore:
     def get_stats(self, repo_id: int) -> dict[str, int]:
         assert self.conn
         stats: dict[str, int] = {}
-        for table in ["files", "symbols", "relations", "experiments",
-                       "paper_sections", "figures", "memory_items"]:
+        for table in ["files", "experiments", "paper_sections", "figures", "memory_items"]:
             cur = self.conn.execute(
                 f"SELECT COUNT(*) as cnt FROM {table} WHERE repo_id=?",
                 (repo_id,),
             )
             stats[table] = cur.fetchone()["cnt"]
+
+        cur = self.conn.execute(
+            """SELECT COUNT(*) as cnt FROM symbols s
+               JOIN files f ON s.file_id = f.file_id WHERE f.repo_id=?""",
+            (repo_id,),
+        )
+        stats["symbols"] = cur.fetchone()["cnt"]
+
+        cur = self.conn.execute(
+            """SELECT COUNT(*) as cnt FROM relations
+               WHERE (source_type='file' AND source_id IN (
+                   SELECT file_id FROM files WHERE repo_id=?))
+               OR (target_type='file' AND target_id IN (
+                   SELECT file_id FROM files WHERE repo_id=?))""",
+            (repo_id, repo_id),
+        )
+        stats["relations"] = cur.fetchone()["cnt"]
         return stats
 
     def clear_repo_data(self, repo_id: int) -> None:
         """Clear all indexed data for a repository (used before full rescan)."""
         assert self.conn
+        self.conn.execute(
+            """DELETE FROM symbols WHERE file_id IN
+               (SELECT file_id FROM files WHERE repo_id=?)""",
+            (repo_id,),
+        )
+        self.conn.execute(
+            """DELETE FROM relations WHERE
+               (source_type='file' AND source_id IN (
+                   SELECT file_id FROM files WHERE repo_id=?))
+               OR (target_type='file' AND target_id IN (
+                   SELECT file_id FROM files WHERE repo_id=?))""",
+            (repo_id, repo_id),
+        )
         for table in ["memory_items", "figures", "paper_sections",
-                       "experiments", "relations", "symbols", "files"]:
+                       "experiments", "files"]:
             self.conn.execute(
                 f"DELETE FROM {table} WHERE repo_id=?", (repo_id,)
             )

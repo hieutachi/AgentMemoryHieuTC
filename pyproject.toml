@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-memory-hieutc"
-version = "1.0.0"
+version = "1.1.0"
 description = "Local research memory agent for AI/ML/RL/MARL codebases"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -32,7 +32,7 @@ from .reports.diff_report import generate_diff_report
 from .reports.health_report import generate_health_report
 from .reports.project_report import generate_scan_report
 from .scanner import scan_repository
-from .utils.text import extract_keywords
+from .utils.text import extract_keywords, estimate_tokens
 
 app = typer.Typer(
     name="agentmemory",
@@ -272,8 +272,16 @@ def context_cmd(
         context_files = generate_context_pack(cfg, store, repo_id)
 
     console.print("[green]Context files generated:[/green]")
+    total_tokens = 0
     for cf in context_files:
-        console.print(f"  {cf}")
+        p = Path(cf)
+        if p.exists():
+            tok = estimate_tokens(p.read_text(encoding="utf-8"))
+            total_tokens += tok
+            console.print(f"  {cf}  (~{tok} tokens)")
+        else:
+            console.print(f"  {cf}")
+    console.print(f"  [dim]Total ~{total_tokens} tokens | mode: {cfg.context_mode}[/dim]")
 
 
 @app.command()

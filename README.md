@@ -27,6 +27,7 @@ agentmemory scan -v
 agentmemory context
 
 # 4. The key output file:
+#    .agent_memory_hieutc/context/CONTEXT_COMPACT.md  (~500 tokens)
 #    .agent_memory_hieutc/context/NEXT_AGENT_PROMPT.md
 ```
 
@@ -38,7 +39,7 @@ agentmemory context
 | `agentmemory scan` | Full static scan of all files |
 | `agentmemory update` | Incremental update from Git diff |
 | `agentmemory graph` | Generate codebase and research workflow graphs |
-| `agentmemory context` | Export context pack for AI agent handoff |
+| `agentmemory context` | Export compact context pack (~500 tokens) |
 | `agentmemory ask "question"` | Ask a question using indexed metadata |
 | `agentmemory paper-map` | Generate paper-to-code mapping |
 | `agentmemory health` | Check repository quality |
@@ -48,12 +49,11 @@ agentmemory context
 
 After scanning, find these files in `.agent_memory_hieutc/context/`:
 
-- **`AGENT_BRIEF.md`** — Complete project overview for AI agents
+- **`CONTEXT_COMPACT.md`** — Primary handoff file (~500 tokens, compact mode)
 - **`NEXT_AGENT_PROMPT.md`** — Ready-to-copy prompt for new sessions
-- **`PROJECT_CONTEXT.md`** — Full file inventory with importance scores
-- **`EXPERIMENT_MAPPING.md`** — Experiment-to-script mapping
-- **`PAPER_MAPPING.md`** — Paper section-to-code mapping
-- **`FIGURE_MAPPING.md`** — Figure generator and source mapping
+- **`AGENT_BRIEF.md`** — Minimal index pointing to compact context
+
+Set `context_mode: full` in config for detailed `PROJECT_CONTEXT.md`, `EXPERIMENT_MAPPING.md`, etc.
 
 ## How It Works
 
@@ -92,6 +92,18 @@ agentmemory context
 agentmemory ask "Where is the reward function?"
 agentmemory ask "Which scripts generate figures?"
 agentmemory ask "What should the next AI agent read first?"
+```
+
+## Context / Token Budget
+
+Default mode is **compact** (~500 tokens total). Tune in `.agent_memory_hieutc/config.yaml`:
+
+```yaml
+context_mode: compact          # or "full" for detailed markdown set
+context_max_files: 12          # files in "read first" list
+context_importance_min: 5.0    # skip low-importance files
+context_summary_max_chars: 48  # truncate summaries
+context_max_experiments: 8
 ```
 
 ## Limitations

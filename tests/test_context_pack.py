@@ -32,9 +32,9 @@ def test_generate_context_pack():
         store.close()
 
         assert len(files) > 0
-        agent_brief = cfg.context_dir / "AGENT_BRIEF.md"
-        assert agent_brief.exists()
-        content = agent_brief.read_text()
+        compact = cfg.context_dir / "CONTEXT_COMPACT.md"
+        assert compact.exists()
+        content = compact.read_text()
         assert "test_project" in content
         assert "train.py" in content
 

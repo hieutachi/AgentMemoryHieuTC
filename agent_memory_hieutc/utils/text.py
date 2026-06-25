@@ -46,6 +46,11 @@ def extract_code_snippet(content: str, line: int, context: int = 3) -> str:
     return "\n".join(snippet_lines)
 
 
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars per token for English/code)."""
+    return max(1, len(text) // 4)
+
+
 def clean_docstring(doc: str | None) -> str:
     if not doc:
         return ""

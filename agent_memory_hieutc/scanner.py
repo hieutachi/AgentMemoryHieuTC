@@ -24,7 +24,8 @@ from .utils.paths import safe_relative, should_ignore
 # File classification patterns
 CLASSIFICATION_RULES: list[tuple[str, list[str]]] = [
     ("training_script", ["train*.py", "*training*.py", "*_train.py"]),
-    ("evaluation_script", ["eval*.py", "evaluate*.py", "*_eval.py", "test_*.py"]),
+    ("evaluation_script", ["eval*.py", "evaluate*.py", "*_eval.py"]),
+    ("test_file", ["test_*.py", "tests/**/*.py", "*_test.py"]),
     ("experiment_script", ["run*.py", "experiment*.py", "run_*.py", "sweep*.py", "launch*.py"]),
     ("figure_generation_script", [
         "plot*.py", "figure*.py", "generate*figure*.py", "make*figure*.py",
@@ -104,6 +105,7 @@ def compute_importance(file_type: str, rel_path: str, summary: str = "") -> floa
         "source_code": 5.0,
         "notebook": 4.0,
         "documentation": 3.0,
+        "test_file": 2.5,
         "log_file": 2.0,
         "checkpoint": 1.5,
         "unknown": 1.0,
@@ -125,7 +127,7 @@ def scan_repository(cfg: MemoryConfig, store: SQLiteStore,
     """Perform a full scan of the repository."""
     start_time = time.time()
     repo_root = cfg.repo_root
-    ignore_patterns = cfg.ignore_patterns
+    ignore_patterns = cfg.effective_ignore_patterns()
     max_size = cfg.max_file_size_bytes
 
     def log(msg: str) -> None:
@@ -163,6 +165,8 @@ def scan_repository(cfg: MemoryConfig, store: SQLiteStore,
             all_files.append((fpath, rel))
 
     log(f"Found {len(all_files)} files. Classifying and parsing...")
+
+    known_paths: set[str] = {rel for _, rel in all_files}
 
     # Process each file
     stats = {"total": len(all_files), "by_type": {}, "parsed": 0, "skipped": 0}
@@ -231,8 +235,7 @@ def scan_repository(cfg: MemoryConfig, store: SQLiteStore,
 
                 # Build relations from imports
                 for imp in py_info.imports:
-                    # Try to find the imported module in our file index
-                    imp_path = _resolve_import_to_path(imp, rel_path)
+                    imp_path = _resolve_import_to_path(imp, rel_path, known_paths)
                     if imp_path:
                         target_file = store.get_file(repo_id, imp_path)
                         if target_file:
@@ -341,9 +344,42 @@ def scan_repository(cfg: MemoryConfig, store: SQLiteStore,
     return stats
 
 
-def _resolve_import_to_path(import_name: str, from_path: str) -> str | None:
+def _resolve_import_to_path(
+    import_name: str,
+    from_path: str,
+    known_paths: set[str] | None = None,
+) -> str | None:
     """Try to resolve a Python import to a file path in the repo."""
-    # Simple heuristic: convert dots to path separators and add .py
-    parts = import_name.split(".")
-    candidate = "/".join(parts) + ".py"
-    return candidate
+    if not import_name or import_name.startswith("typing"):
+        return None
+
+    candidates: list[str] = []
+    parts = [p for p in import_name.split(".") if p and p != ""]
+
+    if parts:
+        candidates.append("/".join(parts) + ".py")
+        candidates.append("/".join(parts) + "/__init__.py")
+
+    # Relative import from same package directory
+    if from_path.endswith(".py") and parts:
+        base_parts = from_path.split("/")[:-1]
+        tail = parts[-1] + ".py"
+        if base_parts:
+            candidates.append("/".join(base_parts + [tail]))
+        candidates.append(tail)
+
+    if known_paths:
+        for c in candidates:
+            if c in known_paths:
+                return c
+        if parts:
+            tail = parts[-1] + ".py"
+            matches = [p for p in known_paths if p.endswith("/" + tail) or p == tail]
+            if len(matches) == 1:
+                return matches[0]
+            pkg_tail = "/".join(parts) + ".py"
+            pkg_matches = [p for p in known_paths if p.endswith(pkg_tail)]
+            if len(pkg_matches) == 1:
+                return pkg_matches[0]
+
+    return candidates[0] if candidates else None
